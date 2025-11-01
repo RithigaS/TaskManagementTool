@@ -472,8 +472,11 @@ async def get_activities(project_id: str, current_user: User = Depends(get_curre
     
     return activities
 
-# WebSocket endpoint
-@app.websocket("/ws/{user_id}")
+# Include the router in the main app
+app.include_router(api_router)
+
+# WebSocket endpoint - must be after router inclusion
+@app.websocket("/api/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
     await manager.connect(websocket, user_id)
     try:
@@ -482,9 +485,6 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             # Handle incoming messages if needed
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id)
-
-# Include the router in the main app
-app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,

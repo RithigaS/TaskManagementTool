@@ -232,7 +232,7 @@ const KanbanBoard = () => {
                       </div>
                     </div>
 
-                    <Droppable droppableId={status}>
+                    <Droppable droppableId={status} isDropDisabled={false}>
                       {(provided, snapshot) => (
                         <div
                           ref={provided.innerRef}

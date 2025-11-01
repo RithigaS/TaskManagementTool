@@ -51,7 +51,7 @@ const KanbanBoard = () => {
     if (!user) return;
     
     const wsUrl = BACKEND_URL.replace('https://', 'wss://').replace('http://', 'ws://');
-    const websocket = new WebSocket(`${wsUrl}/ws/${user.id}`);
+    const websocket = new WebSocket(`${wsUrl}/api/ws/${user.id}`);
 
     websocket.onopen = () => {
       console.log('WebSocket connected');

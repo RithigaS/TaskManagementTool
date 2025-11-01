@@ -55,7 +55,7 @@ class WebSocketTester:
         
         try:
             # Connect to WebSocket
-            ws_endpoint = f"{self.ws_url}/ws/{self.user_id}"
+            ws_endpoint = f"{self.ws_url}/api/ws/{self.user_id}"
             print(f"Connecting to: {ws_endpoint}")
             
             async with websockets.connect(ws_endpoint) as websocket:

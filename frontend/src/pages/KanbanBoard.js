@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,12 +25,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL =
+  process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
 
 const KanbanBoard = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [activities, setActivities] = useState([]);
@@ -41,9 +43,7 @@ const KanbanBoard = () => {
     description: "",
     status: "todo",
   });
-  const [ws, setWs] = useState(null);
 
-  // ✅ Simplified status mapping (no brackets)
   const STATUS = {
     TODO: "todo",
     IN_PROGRESS: "in_progress",
@@ -57,56 +57,18 @@ const KanbanBoard = () => {
   };
 
   useEffect(() => {
+    if (token) {
+      axios.defaults.baseURL = `${BACKEND_URL}/api`;
+      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    }
+  }, [token]);
+
+  useEffect(() => {
     fetchProject();
     fetchTasks();
     fetchActivities();
-    connectWebSocket();
-
-    return () => {
-      if (ws) ws.close();
-    };
   }, [projectId]);
 
-  // 🧠 WebSocket Connection
-  const connectWebSocket = () => {
-    if (!user) return;
-    const wsUrl = BACKEND_URL.replace("https://", "wss://").replace(
-      "http://",
-      "ws://"
-    );
-    const websocket = new WebSocket(`${wsUrl}/api/ws/${user.id}`);
-
-    websocket.onopen = () => console.log("WebSocket connected");
-    websocket.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      handleWebSocketMessage(message);
-    };
-    websocket.onerror = (error) => console.error("WebSocket error:", error);
-    websocket.onclose = () => {
-      console.log("WebSocket disconnected");
-      setTimeout(() => {
-        if (user) connectWebSocket();
-      }, 3000);
-    };
-    setWs(websocket);
-  };
-
-  const handleWebSocketMessage = (message) => {
-    switch (message.type) {
-      case "task_created":
-      case "task_updated":
-      case "task_deleted":
-        fetchTasks();
-        break;
-      case "activity":
-        fetchActivities();
-        break;
-      default:
-        break;
-    }
-  };
-
-  // 🧩 Fetching data
   const fetchProject = async () => {
     try {
       const response = await axios.get(`/projects/${projectId}`);
@@ -120,7 +82,15 @@ const KanbanBoard = () => {
   const fetchTasks = async () => {
     try {
       const response = await axios.get(`/projects/${projectId}/tasks`);
-      setTasks(response.data);
+      const data = Array.isArray(response.data) ? response.data : [];
+      const normalized = data.map((t) => ({
+        ...t,
+        status:
+          t.status && ["todo", "in_progress", "done"].includes(t.status)
+            ? t.status
+            : "todo",
+      }));
+      setTasks(normalized);
     } catch {
       toast.error("Failed to load tasks");
     } finally {
@@ -131,13 +101,12 @@ const KanbanBoard = () => {
   const fetchActivities = async () => {
     try {
       const response = await axios.get(`/projects/${projectId}/activities`);
-      setActivities(response.data);
+      setActivities(response.data || []);
     } catch {
       console.error("Failed to load activities");
     }
   };
 
-  // ➕ Create Task
   const handleCreateTask = async (e) => {
     e.preventDefault();
     try {
@@ -145,7 +114,7 @@ const KanbanBoard = () => {
         `/projects/${projectId}/tasks`,
         newTask
       );
-      setTasks([...tasks, response.data]);
+      setTasks((prev) => [...prev, response.data]);
       setIsCreateOpen(false);
       setNewTask({ title: "", description: "", status: STATUS.TODO });
       toast.success("Task created successfully!");
@@ -154,18 +123,16 @@ const KanbanBoard = () => {
     }
   };
 
-  // ❌ Delete Task
   const handleDeleteTask = async (taskId) => {
     try {
       await axios.delete(`/projects/${projectId}/tasks/${taskId}`);
-      setTasks(tasks.filter((task) => task.id !== taskId));
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
       toast.success("Task deleted");
     } catch {
       toast.error("Failed to delete task");
     }
   };
 
-  // 🖱️ Drag and Drop Logic
   const onDragEnd = async (result) => {
     if (!result.destination) return;
 
@@ -175,10 +142,9 @@ const KanbanBoard = () => {
     const taskId = draggableId;
     const newStatus = destination.droppableId;
 
-    // Optimistic UI update
-    setTasks((prevTasks) =>
-      prevTasks.map((task) =>
-        task.id === taskId ? { ...task, status: newStatus } : task
+    setTasks((prev) =>
+      prev.map((t) =>
+        String(t.id) === taskId ? { ...t, status: newStatus } : t
       )
     );
 
@@ -189,13 +155,11 @@ const KanbanBoard = () => {
     } catch (error) {
       console.error("Failed to update:", error);
       toast.error("Failed to update task status");
-      fetchTasks(); // revert
+      fetchTasks();
     }
   };
 
-  const getTasksByStatus = (status) => {
-    return tasks.filter((task) => task.status === status);
-  };
+  const getTasksByStatus = (status) => tasks.filter((t) => t.status === status);
 
   if (loading) {
     return (
@@ -205,7 +169,6 @@ const KanbanBoard = () => {
     );
   }
 
-  // 🧱 UI Rendering
   return (
     <div
       className="min-h-screen"
@@ -224,9 +187,11 @@ const KanbanBoard = () => {
               </Button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
-                  {project?.name}
+                  {project?.title || "Untitled Project"}
                 </h1>
-                <p className="text-sm text-gray-600">{project?.description}</p>
+                <p className="text-sm text-gray-600">
+                  {project?.description || "No description"}
+                </p>
               </div>
             </div>
             <Button
@@ -273,71 +238,69 @@ const KanbanBoard = () => {
                           }`}
                           style={{ minHeight: "400px" }}
                         >
-                          <div className="space-y-3">
-                            {getTasksByStatus(status).map((task, index) => (
-                              <Draggable
-                                key={task.id}
-                                draggableId={task.id.toString()}
-                                index={index}
-                              >
-                                {(provided, snapshot) => (
-                                  <Card
-                                    ref={provided.innerRef}
-                                    {...provided.draggableProps}
-                                    {...provided.dragHandleProps}
-                                    className={`cursor-move transition-shadow ${
-                                      snapshot.isDragging
-                                        ? "shadow-xl"
-                                        : "shadow-sm"
-                                    }`}
-                                  >
-                                    <CardContent className="p-4">
-                                      <div className="flex items-start justify-between mb-2">
-                                        <h4 className="font-medium text-gray-900 flex-1">
-                                          {task.title}
-                                        </h4>
-                                        <DropdownMenu>
-                                          <DropdownMenuTrigger asChild>
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              className="h-8 w-8 p-0"
-                                            >
-                                              <MoreVertical className="w-4 h-4" />
-                                            </Button>
-                                          </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end">
-                                            <DropdownMenuItem
-                                              onClick={() =>
-                                                handleDeleteTask(task.id)
-                                              }
-                                              className="text-red-600"
-                                            >
-                                              <Trash2 className="w-4 h-4 mr-2" />
-                                              Delete
-                                            </DropdownMenuItem>
-                                          </DropdownMenuContent>
-                                        </DropdownMenu>
+                          {getTasksByStatus(status).map((task, index) => (
+                            <Draggable
+                              key={String(task.id)}
+                              draggableId={String(task.id)}
+                              index={index}
+                            >
+                              {(provided, snapshot) => (
+                                <Card
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  className={`cursor-move transition-shadow ${
+                                    snapshot.isDragging
+                                      ? "shadow-xl"
+                                      : "shadow-sm"
+                                  }`}
+                                >
+                                  <CardContent className="p-4">
+                                    <div className="flex items-start justify-between mb-2">
+                                      <h4 className="font-medium text-gray-900 flex-1">
+                                        {task.title}
+                                      </h4>
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0"
+                                          >
+                                            <MoreVertical className="w-4 h-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem
+                                            onClick={() =>
+                                              handleDeleteTask(task.id)
+                                            }
+                                            className="text-red-600"
+                                          >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Delete
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </div>
+                                    {task.description && (
+                                      <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                                        {task.description}
+                                      </p>
+                                    )}
+                                    {task.due_date && (
+                                      <div className="flex items-center gap-1 text-xs text-gray-500">
+                                        <Clock className="w-3 h-3" />
+                                        {new Date(
+                                          task.due_date
+                                        ).toLocaleDateString()}
                                       </div>
-                                      {task.description && (
-                                        <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                                          {task.description}
-                                        </p>
-                                      )}
-                                      {task.due_date && (
-                                        <div className="flex items-center gap-1 text-xs text-gray-500">
-                                          <Clock className="w-3 h-3" />
-                                          {new Date(
-                                            task.due_date
-                                          ).toLocaleDateString()}
-                                        </div>
-                                      )}
-                                    </CardContent>
-                                  </Card>
-                                )}
-                              </Draggable>
-                            ))}
-                          </div>
+                                    )}
+                                  </CardContent>
+                                </Card>
+                              )}
+                            </Draggable>
+                          ))}
                           {provided.placeholder}
                         </div>
                       )}

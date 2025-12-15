@@ -8,12 +8,13 @@ A modern task management application built to simplify project planning and trac
 
 ## 📸 Screenshots
 
-> Add screenshots of the application here
 
-```md
-![Dashboard](./public/dashboard.png)
-![Kanban Board](./public/kanban.png)
-```
+
+
+![Login](./frontend/public/TaskflowLogin.png)
+![Dashboard](./frontend/public/dashboard.png)
+![Kanban Board](./frontend/public/kanbanboard.png)
+
 
 ## ✨ Features
 
